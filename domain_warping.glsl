@@ -48,10 +48,10 @@ float pattern( in vec2 p , out vec2 q, out vec2 r )
 {
     q.x = fbm( p + vec2(0.0,0.0) );
     q.y = fbm( p + vec2(5.2,1.3) );
-    q.x += cos(iTime*0.1)*0.5;
+    q.x += cos(iTime*0.05)*0.1 + sin(0.3+iTime*0.2)*0.1;
 
-    r.x = fbm( p + 4.0*q + vec2(1.7,9.2) );
-    r.y = fbm( p + 4.0*q + vec2(8.3,2.8) );
+    r.x = fbm( p + 4.0*q);
+    r.y = fbm( p + 10.0*q);
 
     return fbm( p + 4.0*r );
 }
