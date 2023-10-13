@@ -1,279 +1,194 @@
 precision highp float;
-
 uniform vec2 resolution;
-uniform float time;
 uniform vec2 mouse;
+uniform int frame;
+uniform float time;
 uniform sampler2D backbuffer;
 
-#define DIST_MAX 1000.0
-#define ITE_MAX 90
 #define DIST_MIN 0.001
-#define DIST_COEFF 1.0
+#define ITE_MAX 1
+#define DIST_MAX 1000.0
+#define MAX_STEPS 24
+#define SHADOW_STEPS 12
+#define VOLUME_LENGTH 15.
+#define SHADOW_LENGTH 2.
 
-vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
-vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
-vec4 fade(vec4 t) {return t*t*t*(t*(t*6.0-15.0)+10.0);}
-
-float cnoise(vec4 P){
-    vec4 Pi0 = floor(P); // Integer part for indexing
-    vec4 Pi1 = Pi0 + 1.0; // Integer part + 1
-    Pi0 = mod(Pi0, 289.0);
-    Pi1 = mod(Pi1, 289.0);
-    vec4 Pf0 = fract(P); // Fractional part for interpolation
-    vec4 Pf1 = Pf0 - 1.0; // Fractional part - 1.0
-    vec4 ix = vec4(Pi0.x, Pi1.x, Pi0.x, Pi1.x);
-    vec4 iy = vec4(Pi0.yy, Pi1.yy);
-    vec4 iz0 = vec4(Pi0.zzzz);
-    vec4 iz1 = vec4(Pi1.zzzz);
-    vec4 iw0 = vec4(Pi0.wwww);
-    vec4 iw1 = vec4(Pi1.wwww);
-
-    vec4 ixy = permute(permute(ix) + iy);
-    vec4 ixy0 = permute(ixy + iz0);
-    vec4 ixy1 = permute(ixy + iz1);
-    vec4 ixy00 = permute(ixy0 + iw0);
-    vec4 ixy01 = permute(ixy0 + iw1);
-    vec4 ixy10 = permute(ixy1 + iw0);
-    vec4 ixy11 = permute(ixy1 + iw1);
-
-    vec4 gx00 = ixy00 / 7.0;
-    vec4 gy00 = floor(gx00) / 7.0;
-    vec4 gz00 = floor(gy00) / 6.0;
-    gx00 = fract(gx00) - 0.5;
-    gy00 = fract(gy00) - 0.5;
-    gz00 = fract(gz00) - 0.5;
-    vec4 gw00 = vec4(0.75) - abs(gx00) - abs(gy00) - abs(gz00);
-    vec4 sw00 = step(gw00, vec4(0.0));
-    gx00 -= sw00 * (step(0.0, gx00) - 0.5);
-    gy00 -= sw00 * (step(0.0, gy00) - 0.5);
-
-    vec4 gx01 = ixy01 / 7.0;
-    vec4 gy01 = floor(gx01) / 7.0;
-    vec4 gz01 = floor(gy01) / 6.0;
-    gx01 = fract(gx01) - 0.5;
-    gy01 = fract(gy01) - 0.5;
-    gz01 = fract(gz01) - 0.5;
-    vec4 gw01 = vec4(0.75) - abs(gx01) - abs(gy01) - abs(gz01);
-    vec4 sw01 = step(gw01, vec4(0.0));
-    gx01 -= sw01 * (step(0.0, gx01) - 0.5);
-    gy01 -= sw01 * (step(0.0, gy01) - 0.5);
-
-    vec4 gx10 = ixy10 / 7.0;
-    vec4 gy10 = floor(gx10) / 7.0;
-    vec4 gz10 = floor(gy10) / 6.0;
-    gx10 = fract(gx10) - 0.5;
-    gy10 = fract(gy10) - 0.5;
-    gz10 = fract(gz10) - 0.5;
-    vec4 gw10 = vec4(0.75) - abs(gx10) - abs(gy10) - abs(gz10);
-    vec4 sw10 = step(gw10, vec4(0.0));
-    gx10 -= sw10 * (step(0.0, gx10) - 0.5);
-    gy10 -= sw10 * (step(0.0, gy10) - 0.5);
-
-    vec4 gx11 = ixy11 / 7.0;
-    vec4 gy11 = floor(gx11) / 7.0;
-    vec4 gz11 = floor(gy11) / 6.0;
-    gx11 = fract(gx11) - 0.5;
-    gy11 = fract(gy11) - 0.5;
-    gz11 = fract(gz11) - 0.5;
-    vec4 gw11 = vec4(0.75) - abs(gx11) - abs(gy11) - abs(gz11);
-    vec4 sw11 = step(gw11, vec4(0.0));
-    gx11 -= sw11 * (step(0.0, gx11) - 0.5);
-    gy11 -= sw11 * (step(0.0, gy11) - 0.5);
-
-    vec4 g0000 = vec4(gx00.x,gy00.x,gz00.x,gw00.x);
-    vec4 g1000 = vec4(gx00.y,gy00.y,gz00.y,gw00.y);
-    vec4 g0100 = vec4(gx00.z,gy00.z,gz00.z,gw00.z);
-    vec4 g1100 = vec4(gx00.w,gy00.w,gz00.w,gw00.w);
-    vec4 g0010 = vec4(gx10.x,gy10.x,gz10.x,gw10.x);
-    vec4 g1010 = vec4(gx10.y,gy10.y,gz10.y,gw10.y);
-    vec4 g0110 = vec4(gx10.z,gy10.z,gz10.z,gw10.z);
-    vec4 g1110 = vec4(gx10.w,gy10.w,gz10.w,gw10.w);
-    vec4 g0001 = vec4(gx01.x,gy01.x,gz01.x,gw01.x);
-    vec4 g1001 = vec4(gx01.y,gy01.y,gz01.y,gw01.y);
-    vec4 g0101 = vec4(gx01.z,gy01.z,gz01.z,gw01.z);
-    vec4 g1101 = vec4(gx01.w,gy01.w,gz01.w,gw01.w);
-    vec4 g0011 = vec4(gx11.x,gy11.x,gz11.x,gw11.x);
-    vec4 g1011 = vec4(gx11.y,gy11.y,gz11.y,gw11.y);
-    vec4 g0111 = vec4(gx11.z,gy11.z,gz11.z,gw11.z);
-    vec4 g1111 = vec4(gx11.w,gy11.w,gz11.w,gw11.w);
-
-    vec4 norm00 = taylorInvSqrt(vec4(dot(g0000, g0000), dot(g0100, g0100), dot(g1000, g1000), dot(g1100, g1100)));
-    g0000 *= norm00.x;
-    g0100 *= norm00.y;
-    g1000 *= norm00.z;
-    g1100 *= norm00.w;
-
-    vec4 norm01 = taylorInvSqrt(vec4(dot(g0001, g0001), dot(g0101, g0101), dot(g1001, g1001), dot(g1101, g1101)));
-    g0001 *= norm01.x;
-    g0101 *= norm01.y;
-    g1001 *= norm01.z;
-    g1101 *= norm01.w;
-
-    vec4 norm10 = taylorInvSqrt(vec4(dot(g0010, g0010), dot(g0110, g0110), dot(g1010, g1010), dot(g1110, g1110)));
-    g0010 *= norm10.x;
-    g0110 *= norm10.y;
-    g1010 *= norm10.z;
-    g1110 *= norm10.w;
-
-    vec4 norm11 = taylorInvSqrt(vec4(dot(g0011, g0011), dot(g0111, g0111), dot(g1011, g1011), dot(g1111, g1111)));
-    g0011 *= norm11.x;
-    g0111 *= norm11.y;
-    g1011 *= norm11.z;
-    g1111 *= norm11.w;
-
-    float n0000 = dot(g0000, Pf0);
-    float n1000 = dot(g1000, vec4(Pf1.x, Pf0.yzw));
-    float n0100 = dot(g0100, vec4(Pf0.x, Pf1.y, Pf0.zw));
-    float n1100 = dot(g1100, vec4(Pf1.xy, Pf0.zw));
-    float n0010 = dot(g0010, vec4(Pf0.xy, Pf1.z, Pf0.w));
-    float n1010 = dot(g1010, vec4(Pf1.x, Pf0.y, Pf1.z, Pf0.w));
-    float n0110 = dot(g0110, vec4(Pf0.x, Pf1.yz, Pf0.w));
-    float n1110 = dot(g1110, vec4(Pf1.xyz, Pf0.w));
-    float n0001 = dot(g0001, vec4(Pf0.xyz, Pf1.w));
-    float n1001 = dot(g1001, vec4(Pf1.x, Pf0.yz, Pf1.w));
-    float n0101 = dot(g0101, vec4(Pf0.x, Pf1.y, Pf0.z, Pf1.w));
-    float n1101 = dot(g1101, vec4(Pf1.xy, Pf0.z, Pf1.w));
-    float n0011 = dot(g0011, vec4(Pf0.xy, Pf1.zw));
-    float n1011 = dot(g1011, vec4(Pf1.x, Pf0.y, Pf1.zw));
-    float n0111 = dot(g0111, vec4(Pf0.x, Pf1.yzw));
-    float n1111 = dot(g1111, Pf1);
-
-    vec4 fade_xyzw = fade(Pf0);
-    vec4 n_0w = mix(vec4(n0000, n1000, n0100, n1100), vec4(n0001, n1001, n0101, n1101), fade_xyzw.w);
-    vec4 n_1w = mix(vec4(n0010, n1010, n0110, n1110), vec4(n0011, n1011, n0111, n1111), fade_xyzw.w);
-    vec4 n_zw = mix(n_0w, n_1w, fade_xyzw.z);
-    vec2 n_yzw = mix(n_zw.xy, n_zw.zw, fade_xyzw.y);
-    float n_xyzw = mix(n_yzw.x, n_yzw.y, fade_xyzw.x);
-    return 2.2 * n_xyzw;
-}
-
-float random (in vec2 st) {
-    return fract(sin(dot(st.xy,
-                         vec2(12.9898,78.233)))*
-        43758.5453123);
-}
-
-float noise (in vec2 st) {
-    vec2 i = floor(st);
-    vec2 f = fract(st);
-
-    // Four corners in 2D of a tile
-    float a = random(i);
-    float b = random(i + vec2(1.0, 0.0));
-    float c = random(i + vec2(0.0, 1.0));
-    float d = random(i + vec2(1.0, 1.0));
-
-    vec2 u = f * f * (3.0 - 2.0 * f);
-
-    return mix(a, b, u.x) +
-            (c - a)* u.y * (1.0 - u.x) +
-            (d - b) * u.x * u.y;
-}
-
-#define OCTAVES 6
-float fbm (in vec2 st) {
-    // Initial values
-    float value = 0.0;
-    float amplitude = .5;
-    float frequency = 0.;
-    //
-    // Loop of octaves
-    for (int i = 0; i < OCTAVES; i++) {
-        value += amplitude * noise(st);
-        st *= 2.;
-        amplitude *= .5;
-    }
-    return value;
-}
-
-float pattern( in vec2 p )
+//FBM taken from XT95 https://www.shadertoy.com/view/lss3zr
+mat3 m = mat3( 0.00,  0.80,  0.60,
+              -0.80,  0.36, -0.48,
+              -0.60, -0.48,  0.64 );
+float hash( float n )
 {
-    vec2 q = vec2( fbm( p + vec2(0.0,0.0) ),
-                   fbm( p + vec2(5.2,1.3) ) );
+    return fract(sin(n)*43758.5453);
+}
 
-    vec2 r = vec2( fbm( p + 4.0*q + vec2(1.7,9.2) ),
-                   fbm( p + 4.0*q + vec2(8.3,2.8) ) );
+float fsnoise(vec2 c){
+    return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453);
+}
 
-    return fbm( p + 4.0*r );
+float noise( in vec3 x )
+{
+    vec3 p = floor(x);
+    vec3 f = fract(x);
+
+    f = f*f*(3.0-2.0*f);
+
+    float n = p.x + p.y*57.0 + 113.0*p.z;
+
+    float res = mix(mix(mix( hash(n+  0.0), hash(n+  1.0),f.x),
+                        mix( hash(n+ 57.0), hash(n+ 58.0),f.x),f.y),
+                    mix(mix( hash(n+113.0), hash(n+114.0),f.x),
+                        mix( hash(n+170.0), hash(n+171.0),f.x),f.y),f.z);
+    return res;
+}
+
+float fbm( vec3 p )
+{
+    float f;
+    f  = 0.5000*noise( p ); p = m*p*2.02;
+    f += 0.2500*noise( p ); p = m*p*2.03;
+    f += 0.1250*noise( p ); p = m*p*2.01;
+    f += 0.0625*noise( p );
+    return f;
 }
 
 vec3 repetition(vec3 p,float fre){
     return mod(p,fre)-fre*0.5;
 }
 
-float sdBox( vec3 p, vec3 b )
+float sdSphere( vec3 p, float s )
 {
-    p = repetition(p,0.2);
-    vec3 q = abs(p) - b;
-    return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+    p = repetition(p,2.);
+    return length(p)-s;
 }
 
 float map(vec3 p){
-    float ray = DIST_MAX;
     float dist = 0.0;
-    //float boxSize = cnoise(vec4(p*vec3(0.5,0.5,0.5),time*0.1))*0.1; //animation
-    float boxSize = 0.05;
-    dist = sdBox(p,vec3(boxSize));
-    ray = min(ray,dist);
-    return ray;
+    float size = 0.04;
+    return sdSphere(p,size);
 }
 
-vec3 calcNormal( in vec3 p ) // for function f(p)
-{
-    const float eps = 0.00001; // or some other value
-    const vec2 h = vec2(eps,0);
-    return normalize( vec3(map(p+h.xyy) - map(p-h.xyy),
-                           map(p+h.yxy) - map(p-h.yxy),
-                           map(p+h.yyx) - map(p-h.yyx) ) );
+float volumeMap(vec3 p,float f){
+    p = repetition(p,20.0);
+    vec3 scale = vec3(0.7,1.,1.);
+    
+    float sph = length(p*scale) - 15.*f*f;
+    
+    return min(max(0.0,sph),1.0);
 }
 
-float calcAO( in vec3 pos, in vec3 nor )
-{
-	float occ = 0.0;
-    float sca = 1.0;
-    for( int i=0; i<5; i++ )
-    {
-        float h = 0.01 + 0.12*float(i)/4.0;
-        float d = map( pos + h*nor );
-        occ += (h-d)*sca;
-        sca *= 0.95;
-        if( occ>0.35 ) break;
-    }
-    return clamp( 1.0 - 3.0*occ, 0.0, 1.0 ) * (0.5+0.5*nor.y);
+float damain_warping( in vec3 p , out vec3 q, out vec3 r ,float f){
+    q.x = f;
+    q.y = f;
+    q.x += cos(0.5) + sin(0.3+0.5);
+
+    float ff = fbm(p+4.*q);
+    r.x = ff;
+    r.y = ff;
+
+    return fbm( p + 4.0*r );
 }
 
-void main(void) {
-    vec2 uv = (gl_FragCoord.xy * 2.0 - resolution.xy) / min(resolution.x, resolution.y);
-    vec2 mouseuv = (mouse.xy * 2.0 - resolution.xy) / min(resolution.x, resolution.y);
+vec3 damain_warping_coloring( in vec3 p ,float f){
+    vec3 o = vec3(0.0,0.0,0.0);
+    vec3 n = vec3(0.0,0.0,0.0);
+    float luminance = 0.1;
 
-    vec3 camera = vec3(1.0,0.5,-1.0 + time*0.1);
-    vec3 dir = normalize(vec3(uv,1.0));
-    vec3 light = vec3(0.0,0.0,0.0);
+    float dw = damain_warping(p,o,n,f);
 
-    float ray = 0.0;
-    vec3 col = vec3(1.0,1.0,1.0);
-    vec3 normal = vec3(0.2,0.1,0.5);
-    float occ = 1.0;
+    vec3 cloud_base_col = vec3(0.2,0.1,0.9);
+    vec3 cloud_blue = vec3(0.2,0.0,0.7);
+    vec3 cloud_black = vec3(0.2,0.2,0.2);
+    vec3 cloud_red = vec3(0.5,0.2,0.2);
 
-    for(int i=0; i<ITE_MAX; i++){
-        vec3 p = ray*dir + camera;
-        float ttemp = map(p);
+    vec3 col = cloud_base_col;
+    col = mix( col, cloud_blue, 1.5*dw );
+    col = mix( col, cloud_black, 1.3*dot(n,n) );
+    col = mix( col, cloud_red, 1.1*o.y*o.y );
 
-        if(ttemp<DIST_MIN){
-            normal = calcNormal(p);
-            occ = calcAO(light,normal);
-            //col = vec3(1.0);
-            float pat = pattern(vec2(p.x*5.0,p.y*5.0));
-            col = vec3(pat * 0.25,0.13,pat * 0.9);
-            break;
+    return col * luminance;
+}
+
+float jitter;
+
+vec4 cloudMarch(vec3 camera, vec3 ray){
+    float density = 0.0;
+    float stepLen = VOLUME_LENGTH/float(MAX_STEPS);
+    
+    float cloudDensity = 6.0;
+  	vec3 cloudColor = vec3(.0,.0,.0);
+    
+    vec4 sum = vec4(vec3(0.),1.);
+    
+    vec3 pos = camera+ray*jitter;
+    
+    for(int i=0;i<MAX_STEPS;i++){
+        if(sum.a<.01)break;
+        
+        float f = fbm(pos);
+        float fogD = volumeMap(pos,f);
+        
+        if(fogD<0.999){
+            density = clamp((fogD/float(MAX_STEPS))*cloudDensity,0.0,1.0);
+            
+            cloudColor = damain_warping_coloring(pos,f);
+            sum.rgb += cloudColor*sum.a;
+            
+            sum.a*=1.-density;
+        }
+        
+        //dust star
+        for(int i=0; i<ITE_MAX; i++){
+            float d = map(pos);
+
+            if(d<DIST_MIN){
+                sum.rgb += vec3(0.3);
+                break;
+            }   
         }
 
-        ray += ttemp * DIST_COEFF;
+        pos+=ray*stepLen;
     }
 
-    //col = vec3(ray*0.1);
-    //gl_FragColor = vec4(col ,1.0);
+    return sum;
+    
+}
 
-    gl_FragColor = vec4(col * occ ,1.0);
-    //gl_FragColor = vec4(normal,1.0);
+vec3 rotate ( vec3 pos, vec3 axis,float theta )
+{
+    axis = normalize( axis );
+    
+    vec3 v = cross( pos, axis );
+    vec3 u = cross( axis, v );
+    
+    return u * cos( theta ) + v * sin( theta ) + axis * dot( pos, axis );   
+    
+}
+
+void main()
+{
+    vec2 uv = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
+
+    jitter = hash(uv.x+uv.y*57.0);
+
+    vec3 skybox = mix(vec3(0.1,0.,0.05),vec3(0.05,0.0,0.1),(1.-uv.y));
+
+    vec3 camera = vec3(time*1.5,time*0.5,-10.0+time*4.);
+    vec3 dir = normalize(vec3(uv,1.0));
+    //dir = rotate(dir,vec3(0.,0.,1.),time*2.0);
+    //dir = rotate(dir,vec3(1.,0.,0.),-sin(time)*0.2-0.2);
+    vec3 light = vec3(0.,0.,5.);
+
+	  vec4 res = cloudMarch(camera,dir);
+    res = pow(res,vec4(2.0/2.6));
+
+    vec3 col = res.rgb+mix(vec3(0.),skybox,res.a); //背景と合成
+    
+    col = mix(vec3(0.),col,clamp(time*0.2,0.,1.));
+    
+    if(1.8<time && time<4. && fsnoise(vec2(time))<0.3)
+      col = vec3(0.);
+
+    gl_FragColor = vec4(col,1.);
+
 }

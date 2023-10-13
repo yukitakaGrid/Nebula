@@ -11,8 +11,6 @@ uniform sampler2D backbuffer;
 #define SHADOW_STEPS 12
 #define VOLUME_LENGTH 15.
 #define SHADOW_LENGTH 2.
-#define BRIGHTNESS_THRESHOLD 0.499
-#define INTENSITY 5.
 
 //FBM taken from XT95 https://www.shadertoy.com/view/lss3zr
 mat3 m = mat3( 0.00,  0.80,  0.60,
@@ -60,7 +58,7 @@ vec3 repetition(vec3 p,float fre){
 }
 
 float sdOctahedron( vec3 p, float s ) { 
-    p = repetition(p,0.6);
+    p = repetition(p,2.);
     p = abs(p); 
     float m = p.x+p.y+p.z-s; 
     vec3 q; 
@@ -77,20 +75,19 @@ float map(vec3 p){
     float dist = 0.0;
     //float boxSize = cnoise(vec4(p*vec3(0.5,0.5,0.5),time*0.1))*0.1; //animation
     float size = 0.05;
-    dist = sdOctahedron(p+sin(length(p)+(time*1.))*0.03+cos(length(p)+(time*1.))*0.03,size);
+    dist = sdOctahedron(p+sin(length(p)+(time*0.01))*0.06+cos(length(p)+(time*0.01))*0.1,size);
     ray = min(ray,dist);
     return ray;
 }
 
 float volumeMap(vec3 p){
-    
     float f = fbm(p);
-    vec3 scale = vec3(1.,1.,1.);
+    p =repetition(p,20.0);
+    vec3 scale = vec3(1.,0.8,1.);
     
-    float sph = length(p*scale) - 12.*f*f;
+    float sph = length(p*scale) - 15.*f*f;
     
     return min(max(0.0,sph),1.0);
-    
 }
 
 float damain_warping( in vec3 p , out vec3 q, out vec3 r ){
@@ -113,7 +110,7 @@ vec3 damain_warping_coloring( in vec3 p ){
 
     vec3 cloud_base_col = vec3(0.2,0.1,0.9);
     vec3 cloud_blue = vec3(0.2,0.0,0.7);
-    vec3 cloud_black = vec3(0.0,0.0,0.0);
+    vec3 cloud_black = vec3(0.2,0.2,0.2);
     vec3 cloud_red = vec3(0.5,0.2,0.2);
 
     vec3 col = cloud_base_col;
@@ -141,6 +138,8 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
         if(sum.a<.01)break;
         
         float fogD = volumeMap(pos);
+        /*float f = fbm(pos*0.3);
+        float fogD = f;*/
         
         if(fogD<0.999){
             density = clamp((fogD/float(MAX_STEPS))*cloudDensity,0.0,1.0);
@@ -149,8 +148,9 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
             sum.rgb += cloudColor*sum.a;
             
             sum.a*=1.-density;
-
-            //dust star
+        }
+        
+        //dust star
             for(int i=0; i<ITE_MAX; i++){
                 float ttemp = map(pos);
 
@@ -159,12 +159,22 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
                     break;
                 }   
             }
-        }
 
         pos+=ray*stepLen;
     }
 
     return sum;
+    
+}
+
+vec3 rotate ( vec3 pos, vec3 axis,float theta )
+{
+    axis = normalize( axis );
+    
+    vec3 v = cross( pos, axis );
+    vec3 u = cross( axis, v );
+    
+    return u * cos( theta ) + v * sin( theta ) + axis * dot( pos, axis );   
     
 }
 
@@ -176,14 +186,18 @@ void main()
 
     vec3 skybox = mix(vec3(0.1,0.,0.05),vec3(0.05,0.0,0.1),(1.-uv.y));
 
-    vec3 camera = vec3(0.0,0.0,-10.0);
+    vec3 camera = vec3(time*1.5,time*0.5,-10.0-time*0.5);
     vec3 dir = normalize(vec3(uv,1.0));
+    dir = rotate(dir,vec3(0.,1.,0.),sin(time)*0.05);
+    //dir = rotate(dir,vec3(1.,0.,0.),-sin(time)*0.2-0.2);
+    vec3 light = vec3(0.,0.,5.);
 
 	  vec4 res = cloudMarch(camera,dir);
     res = pow(res,vec4(2.0/2.6));
 
     vec3 col = res.rgb+mix(vec3(0.),skybox,res.a); //背景と合成
-    vec3 premix = col;
+    
+    col = mix(vec3(0.),vec3(time*0.0001),time*0.01);
 
     gl_FragColor = vec4(col,1.);
 

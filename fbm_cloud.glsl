@@ -30,21 +30,27 @@ float noise( in vec3 x )
     return res;
 }
 
-float fbm( vec3 p )
-{
-    float f;
-    f  = 0.5000*noise( p ); p = m*p*2.02;
-    f += 0.2500*noise( p ); p = m*p*2.03;
-    f += 0.1250*noise( p ); p = m*p*2.01;
-    f += 0.0625*noise( p );
-    return f;
+#define numOctaves 4
+float fbm( in vec3 x, in float H )
+{    
+    float G = exp2(-H);
+    float f = 1.0;
+    float a = 1.0;
+    float t = 0.0;
+    for( int i=0; i<numOctaves; i++ )
+    {
+        t += a*noise(f*x);
+        f *= 2.0;
+        a *= G;
+    }
+    return t;
 }
 
 //--------------------------------------------------
 
 float map(vec3 p){
     
-    float f = fbm(p-vec3(0,0.5,1.0)*iTime*.25);
+    float f = fbm(p-vec3(0,0.5,1.0)*iTime*.25,0.1);
     
     float sph = 1.0-length(p*vec3(.5,1,.5))+f*3.5;
     
@@ -56,7 +62,7 @@ vec3 fbm_coloring( in vec3 p ){
     vec3 o = vec3(0.0,0.0,0.0);
     vec3 n = vec3(0.0,0.0,0.0);
 
-    float f = fbm(p);
+    float f = fbm(p,1.);
 
     vec3 col = vec3(0.2,0.1,0.9);
     col = mix( col, vec3(0.2,0.0,0.7), 1.5*f );
