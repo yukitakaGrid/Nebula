@@ -10,8 +10,9 @@ uniform sampler2D backbuffer;
 #define DIST_MAX 1000.0
 #define MAX_STEPS 24
 #define SHADOW_STEPS 12
-#define VOLUME_LENGTH 15.
+#define VOLUME_LENGTH 10.
 #define SHADOW_LENGTH 2.
+#define DIST_COEFF 0.25
 
 //FBM taken from XT95 https://www.shadertoy.com/view/lss3zr
 mat3 m = mat3( 0.00,  0.80,  0.60,
@@ -24,6 +25,17 @@ float hash( float n )
 
 float fsnoise(vec2 c){
     return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+float fractal_noise(vec2 fragCoord, float time) {
+    vec2 uv = fragCoord/resolution.xy;
+
+    float split_size_x = 20.0;
+    float split_size_y = 100.0;
+
+    float x = floor(uv.x * split_size_x);
+    float y = floor(uv.y * split_size_y);
+    return fsnoise(vec2(x, y) + vec2(cos(time)));
 }
 
 float noise( in vec3 x )
@@ -63,7 +75,6 @@ float sdSphere( vec3 p, float s )
 }
 
 float map(vec3 p){
-    float dist = 0.0;
     float size = 0.04;
     return sdSphere(p,size);
 }
@@ -109,6 +120,12 @@ vec3 damain_warping_coloring( in vec3 p ,float f){
     return col * luminance;
 }
 
+float sdPlane( vec3 p, vec3 n, float h )
+{
+  // n must be normalized
+  return dot(p,n) + h;
+}
+
 float jitter;
 
 vec4 cloudMarch(vec3 camera, vec3 ray){
@@ -121,6 +138,7 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
     vec4 sum = vec4(vec3(0.),1.);
     
     vec3 pos = camera+ray*jitter;
+    float waveZ = camera.z - mod(time*9.,10.) + 10.;
     
     for(int i=0;i<MAX_STEPS;i++){
         if(sum.a<.01)break;
@@ -132,20 +150,23 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
             density = clamp((fogD/float(MAX_STEPS))*cloudDensity,0.0,1.0);
             
             cloudColor = damain_warping_coloring(pos,f);
+            /*if(pos.z-stepLen*0.4<waveZ && waveZ<pos.z+stepLen*0.4 && time>10.){
+                cloudColor += vec3(0.3,0.5,0.8);
+            }*/
+            
+              //cloudColor += sdPlane(pos,vec3(1.,1.,1.),1.);
             sum.rgb += cloudColor*sum.a;
             
             sum.a*=1.-density;
         }
-        
-        //dust star
-        for(int i=0; i<ITE_MAX; i++){
-            float d = map(pos);
-
-            if(d<DIST_MIN){
-                sum.rgb += vec3(0.3);
-                break;
-            }   
-        }
+      for(int i=0; i<ITE_MAX; i++){
+          float d = map(pos);
+  
+          if(d<DIST_MIN){
+              sum.rgb += vec3(0.4,0.4,0.15);
+              break;
+          } 
+      }
 
         pos+=ray*stepLen;
     }
@@ -168,26 +189,38 @@ vec3 rotate ( vec3 pos, vec3 axis,float theta )
 void main()
 {
     vec2 uv = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
-
-    jitter = hash(uv.x+uv.y*57.0);
-
-    vec3 skybox = mix(vec3(0.1,0.,0.05),vec3(0.05,0.0,0.1),(1.-uv.y));
-
-    vec3 camera = vec3(time*1.5,time*0.5,-10.0+time*4.);
-    vec3 dir = normalize(vec3(uv,1.0));
-    //dir = rotate(dir,vec3(0.,0.,1.),time*2.0);
-    //dir = rotate(dir,vec3(1.,0.,0.),-sin(time)*0.2-0.2);
-    vec3 light = vec3(0.,0.,5.);
-
-	  vec4 res = cloudMarch(camera,dir);
-    res = pow(res,vec4(2.0/2.6));
-
-    vec3 col = res.rgb+mix(vec3(0.),skybox,res.a); //背景と合成
+    vec3 col = vec3(0.);
     
-    col = mix(vec3(0.),col,clamp(time*0.2,0.,1.));
-    
-    if(1.8<time && time<4. && fsnoise(vec2(time))<0.3)
-      col = vec3(0.);
+    //start effect
+    if(3.5<time && time<10. && fsnoise(vec2(time))<0.35){
+      
+      float noise = fractal_noise(gl_FragCoord.xy, time);
+
+      vec4 image1 = texture2D(backbuffer, uv+vec2(0.1 * noise, .0)) - vec4(.05);
+      vec4 image2 = texture2D(backbuffer, uv) - vec4(.05);
+      vec4 image3 = texture2D(backbuffer, uv-vec2(0.1 * noise, .0)) - vec4(.05);
+      
+      col = vec3(image1.x,image2.y,image3.z);
+    }
+
+    else{
+      jitter = hash(uv.x+uv.y*57.0);
+
+      vec3 skybox = mix(vec3(0.1,0.,0.05),vec3(0.05,0.0,0.1),(1.-uv.y));
+  
+      vec3 camera = vec3(time*1.5,time*0.5,-10.0+time*4.);
+      vec3 dir = normalize(vec3(uv,1.0));
+      //dir = rotate(dir,vec3(0.,0.,1.),time*2.0);
+      //dir = rotate(dir,vec3(1.,0.,0.),-sin(time)*0.2-0.2);
+      vec3 light = vec3(0.,0.,5.);
+  
+  	  vec4 res = cloudMarch(camera,dir);
+      res = pow(res,vec4(2.0/2.6));
+  
+      col = res.rgb+mix(vec3(0.),skybox,res.a); //背景と合成
+      
+      col = mix(vec3(0.),col,clamp(time*0.1,0.,1.));
+    }
 
     gl_FragColor = vec4(col,1.);
 
