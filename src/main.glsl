@@ -10,11 +10,10 @@ uniform sampler2D backbuffer;
 #define DIST_MAX 1000.0
 #define MAX_STEPS 24
 #define SHADOW_STEPS 12
-#define VOLUME_LENGTH 10.
+#define VOLUME_LENGTH 15.
 #define SHADOW_LENGTH 2.
 #define DIST_COEFF 0.25
 
-//FBM taken from XT95 https://www.shadertoy.com/view/lss3zr
 mat3 m = mat3( 0.00,  0.80,  0.60,
               -0.80,  0.36, -0.48,
               -0.60, -0.48,  0.64 );
@@ -75,13 +74,14 @@ float sdSphere( vec3 p, float s )
 }
 
 float map(vec3 p){
-    float size = 0.04;
-    return sdSphere(p,size);
+    float size = 0.07;
+    return sdSphere(p+vec3(0.,0.,sin(p.z+time)),size);
 }
 
 float volumeMap(vec3 p,float f){
+    p += vec3(10.);
     p = repetition(p,20.0);
-    vec3 scale = vec3(0.7,1.,1.);
+    vec3 scale = vec3(0.8,0.7,0.8);
     
     float sph = length(p*scale) - 15.*f*f;
     
@@ -103,14 +103,14 @@ float damain_warping( in vec3 p , out vec3 q, out vec3 r ,float f){
 vec3 damain_warping_coloring( in vec3 p ,float f){
     vec3 o = vec3(0.0,0.0,0.0);
     vec3 n = vec3(0.0,0.0,0.0);
-    float luminance = 0.1;
+    float luminance = 0.2;
 
     float dw = damain_warping(p,o,n,f);
 
     vec3 cloud_base_col = vec3(0.2,0.1,0.9);
-    vec3 cloud_blue = vec3(0.2,0.0,0.7);
-    vec3 cloud_black = vec3(0.2,0.2,0.2);
-    vec3 cloud_red = vec3(0.5,0.2,0.2);
+    vec3 cloud_blue = vec3(0.2,0.0,0.9);
+    vec3 cloud_black = vec3(0.1,0.1,0.1);
+    vec3 cloud_red = vec3(0.7,0.2,0.2);
 
     vec3 col = cloud_base_col;
     col = mix( col, cloud_blue, 1.5*dw );
@@ -118,12 +118,6 @@ vec3 damain_warping_coloring( in vec3 p ,float f){
     col = mix( col, cloud_red, 1.1*o.y*o.y );
 
     return col * luminance;
-}
-
-float sdPlane( vec3 p, vec3 n, float h )
-{
-  // n must be normalized
-  return dot(p,n) + h;
 }
 
 float jitter;
@@ -138,7 +132,6 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
     vec4 sum = vec4(vec3(0.),1.);
     
     vec3 pos = camera+ray*jitter;
-    float waveZ = camera.z - mod(time*9.,10.) + 10.;
     
     for(int i=0;i<MAX_STEPS;i++){
         if(sum.a<.01)break;
@@ -150,11 +143,7 @@ vec4 cloudMarch(vec3 camera, vec3 ray){
             density = clamp((fogD/float(MAX_STEPS))*cloudDensity,0.0,1.0);
             
             cloudColor = damain_warping_coloring(pos,f);
-            /*if(pos.z-stepLen*0.4<waveZ && waveZ<pos.z+stepLen*0.4 && time>10.){
-                cloudColor += vec3(0.3,0.5,0.8);
-            }*/
-            
-              //cloudColor += sdPlane(pos,vec3(1.,1.,1.),1.);
+        
             sum.rgb += cloudColor*sum.a;
             
             sum.a*=1.-density;
@@ -188,17 +177,17 @@ vec3 rotate ( vec3 pos, vec3 axis,float theta )
 
 void main()
 {
-    vec2 uv = (gl_FragCoord.xy*2.0-resolution.xy)/min(resolution.x,resolution.y);
+    vec2 uv = (gl_FragCoord.xy*2.-resolution.xy)/min(resolution.x,resolution.y);
     vec3 col = vec3(0.);
     
     //start effect
-    if(3.5<time && time<10. && fsnoise(vec2(time))<0.35){
+    if(3.5<time && time<7.5 && fsnoise(vec2(time))<0.3){
       
       float noise = fractal_noise(gl_FragCoord.xy, time);
 
-      vec4 image1 = texture2D(backbuffer, uv+vec2(0.1 * noise, .0)) - vec4(.05);
-      vec4 image2 = texture2D(backbuffer, uv) - vec4(.05);
-      vec4 image3 = texture2D(backbuffer, uv-vec2(0.1 * noise, .0)) - vec4(.05);
+      vec4 image1 = texture2D(backbuffer, uv+vec2(0.1 * noise, .0)) - vec4(.08);
+      vec4 image2 = texture2D(backbuffer, uv) - vec4(.1);
+      vec4 image3 = texture2D(backbuffer, uv-vec2(0.1 * noise, .0)) - vec4(.08);
       
       col = vec3(image1.x,image2.y,image3.z);
     }
@@ -206,13 +195,15 @@ void main()
     else{
       jitter = hash(uv.x+uv.y*57.0);
 
-      vec3 skybox = mix(vec3(0.1,0.,0.05),vec3(0.05,0.0,0.1),(1.-uv.y));
+      vec3 skybox = vec3(0.0,0.0,0.0);
   
-      vec3 camera = vec3(time*1.5,time*0.5,-10.0+time*4.);
+      vec3 move = vec3(sin(time*0.5)*3.,cos(time)*1.,0.);
+      vec3 camera = vec3(time+20.,10.+time,time*2.)+move;
       vec3 dir = normalize(vec3(uv,1.0));
-      //dir = rotate(dir,vec3(0.,0.,1.),time*2.0);
-      //dir = rotate(dir,vec3(1.,0.,0.),-sin(time)*0.2-0.2);
-      vec3 light = vec3(0.,0.,5.);
+      dir = rotate(dir,vec3(0.,1.,0.),move.x*0.06);
+      dir = rotate(dir,vec3(0.,1.,0.),sin(time*4.)*0.01+cos(time*3.5)*0.01);
+      dir = rotate(dir,vec3(1.,0.,0.),move.y*0.06);
+      dir = rotate(dir,vec3(1.,0.,0.),sin(0.3+time*4.)*0.01+cos(0.3+time*3.5)*0.01);
   
   	  vec4 res = cloudMarch(camera,dir);
       res = pow(res,vec4(2.0/2.6));

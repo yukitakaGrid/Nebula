@@ -22,8 +22,8 @@ vec2 pmod(vec2 p,float count){
 
 float sdCylinder(vec3 p,float q){
     float rotStrong = 0.25;
-    float tornadoStrong = 0.009;
-    float wide = .01;
+    float tornadoStrong = 0.003;
+    float wide = .04;
     return length(p.xy - vec2(rotStrong,0.)) - wide + tornadoStrong * sin(q);
 }
 
@@ -50,6 +50,7 @@ vec4 raymarching(vec3 o,vec3 r){
 	for(int i = 0; i < 128; i++){
 		p = o + r * t;
 		float d = map(p);
+		d = max(d,0.0002);
 		t += d * 0.75;
 	}
 	vec3 n = calcNormal(p);
